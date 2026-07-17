@@ -8,6 +8,7 @@ import { refundsApi } from '../services/api/refunds.api';
 import { escrowsApi } from '../services/api/escrows.api';
 import { freighterService } from '../services/stellar/freighter.service';
 import { getTransactionExplorerUrl } from '../services/stellar/explorer.service';
+import { analyticsService } from '../services/analytics.service';
 import type { PaymentDto } from '../types/api.types';
 import { 
   ArrowLeft, 
@@ -135,7 +136,22 @@ export const InvoiceDetail: React.FC = () => {
     try {
       const prepared = await escrowsApi.prepareRefund(invoice.escrow.id, walletAddress);
       const signedXdr = await freighterService.signSorobanTransaction(prepared.unsignedXdr, walletAddress);
+      analyticsService.trackWalletInteraction('SOROBAN_XDR_SIGNED', {
+        walletAddress,
+        network: prepared.network,
+        entityType: 'escrow',
+        entityId: invoice.escrow.id,
+        metadata: { functionName: 'refund', invoiceId: invoice.id },
+      });
       const submitted = await escrowsApi.submitRefund(invoice.escrow.id, signedXdr, walletAddress);
+      analyticsService.trackWalletInteraction('ESCROW_ACTION_SUBMITTED', {
+        walletAddress,
+        network: prepared.network,
+        entityType: 'escrow',
+        entityId: invoice.escrow.id,
+        transactionHash: submitted.transactionHash,
+        metadata: { functionName: 'refund', invoiceId: invoice.id },
+      });
       const updated = await getInvoice(invoiceId || '');
       setInvoice(updated);
       setActionMessage(
@@ -166,7 +182,24 @@ export const InvoiceDetail: React.FC = () => {
         reason: refundReason,
       });
       const signedXdr = await freighterService.signClassicTransaction(prepared.unsignedXdr, walletAddress || undefined);
+      if (walletAddress) {
+        analyticsService.trackWalletInteraction('REFUND_XDR_SIGNED', {
+          walletAddress,
+          entityType: 'refund',
+          entityId: prepared.id,
+          metadata: { paymentId: confirmedPayment.id, invoiceId: invoice.id },
+        });
+      }
       const submitted = await refundsApi.submit(prepared.id, signedXdr);
+      if (walletAddress) {
+        analyticsService.trackWalletInteraction('PAYMENT_SUBMITTED', {
+          walletAddress,
+          entityType: 'refund',
+          entityId: prepared.id,
+          transactionHash: submitted.transactionHash,
+          metadata: { paymentId: confirmedPayment.id, invoiceId: invoice.id },
+        });
+      }
       const updated = await getInvoice(invoiceId || '');
       setInvoice(updated);
       setRefundOpen(false);

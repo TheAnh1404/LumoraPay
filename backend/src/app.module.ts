@@ -15,6 +15,7 @@ import { validateEnv } from './config/env.validation';
 import { WalletsModule } from './wallets/wallets.module';
 import { ContractsModule } from './contracts/contracts.module';
 import { EscrowsModule } from './escrows/escrows.module';
+import { PilotModule } from './pilot/pilot.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { EscrowsModule } from './escrows/escrows.module';
     WalletsModule,
     ContractsModule,
     EscrowsModule,
+    PilotModule,
   ],
   controllers: [AppController],
   providers: [AppService],

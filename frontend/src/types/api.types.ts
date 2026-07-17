@@ -252,3 +252,80 @@ export interface WalletTransactionDto {
   status: string;
   explorerUrl?: string | null;
 }
+
+export type WalletInteractionType =
+  | 'CONNECT'
+  | 'RESTORE'
+  | 'DISCONNECT'
+  | 'NETWORK_CHECK'
+  | 'BALANCE_CHECK'
+  | 'FAUCET_REQUEST'
+  | 'PAYMENT_XDR_SIGNED'
+  | 'PAYMENT_SUBMITTED'
+  | 'PAYMENT_CONFIRMED'
+  | 'REFUND_XDR_SIGNED'
+  | 'SOROBAN_XDR_SIGNED'
+  | 'ESCROW_ACTION_SUBMITTED';
+
+export type FeedbackCategory =
+  | 'GENERAL'
+  | 'UX'
+  | 'BUG'
+  | 'PAYMENT'
+  | 'WALLET'
+  | 'ESCROW'
+  | 'DOCUMENTATION';
+
+export interface PilotEventRequest {
+  eventName: string;
+  route?: string;
+  sessionId?: string;
+  walletAddress?: string;
+  properties?: Record<string, unknown>;
+}
+
+export interface WalletInteractionRequest {
+  interactionType: WalletInteractionType;
+  walletAddress?: string;
+  network?: string;
+  route?: string;
+  entityType?: string;
+  entityId?: string;
+  transactionHash?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ProductFeedbackRequest {
+  category?: FeedbackCategory;
+  rating: number;
+  message: string;
+  contactConsent?: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+export interface PilotOverviewDto {
+  level4Targets: {
+    minimumRealUsers: number;
+    minimumMeaningfulCommits: number;
+    smartContractsDeployed: boolean;
+  };
+  totals: {
+    users: number;
+    verifiedWallets: number;
+    uniqueInteractedWallets: number;
+    walletInteractions: number;
+    feedbackResponses: number;
+    productEvents: number;
+  };
+  currentMerchant: {
+    merchantId?: string | null;
+    walletInteractions: number;
+    feedbackResponses: number;
+  };
+  readiness: {
+    usersOnboarded: boolean;
+    walletProofCaptured: boolean;
+    feedbackCollected: boolean;
+    contractsConfigured: boolean;
+  };
+}

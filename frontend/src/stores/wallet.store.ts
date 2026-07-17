@@ -5,6 +5,7 @@ import { stellarApi } from '../services/api/stellar.api';
 import { authApi } from '../services/api/auth.api';
 import { hasAccessToken } from '../services/api/api-client';
 import { getConfiguredStellarNetwork } from '../services/stellar/freighter.service';
+import { analyticsService } from '../services/analytics.service';
 
 export type WalletStatus = 'disconnected' | 'connecting' | 'connected' | 'wrong_network' | 'error';
 
@@ -151,6 +152,15 @@ export const useWalletStore = create<WalletState>((set, get) => ({
           network: detectedNetworkLabel,
           connectedAt: new Date().toISOString(),
         });
+        analyticsService.trackWalletInteraction('CONNECT', {
+          walletAddress: result.walletAddress,
+          network: detectedNetworkLabel,
+          metadata: {
+            balanceLoaded: !balanceError,
+            status:
+              detectedNetworkLabel === expectedNetwork.label ? 'connected' : 'wrong_network',
+          },
+        });
         return result.walletAddress;
       } catch (e) {
         const message = normalizeWalletError(e);
@@ -257,6 +267,14 @@ export const useWalletStore = create<WalletState>((set, get) => ({
           network: detectedNetworkLabel,
           connectedAt: session?.connectedAt || new Date().toISOString(),
         });
+        analyticsService.trackWalletInteraction('RESTORE', {
+          walletAddress: currentAddress,
+          network: detectedNetworkLabel,
+          metadata: {
+            balanceLoaded: !balanceError,
+            status: restoredStatus,
+          },
+        });
         return currentAddress;
       } catch (e) {
         const message = normalizeWalletError(e);
@@ -284,6 +302,13 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   },
 
   disconnect: () => {
+    const { address, network } = get();
+    if (address && hasAccessToken()) {
+      analyticsService.trackWalletInteraction('DISCONNECT', {
+        walletAddress: address,
+        network,
+      });
+    }
     localStorage.removeItem('lumora_access_token');
     clearWalletSession();
     set({
@@ -315,6 +340,12 @@ export const useWalletStore = create<WalletState>((set, get) => ({
         return false;
       }
       set({ balance: parseFloat(result.balance).toFixed(5) });
+      analyticsService.trackWalletInteraction('FAUCET_REQUEST', {
+        walletAddress: address,
+        network: get().network,
+        transactionHash: result.transactionHash || undefined,
+        metadata: { balance: result.balance },
+      });
       return true;
     } catch (e) {
       set({ error: e instanceof Error ? e.message : 'Faucet request failed' });

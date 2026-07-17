@@ -7,6 +7,7 @@ import { classicPaymentService, validateIntentAgainstInvoice } from '../services
 import { pollPaymentIntentStatus } from '../services/stellar/transaction-poller.service';
 import { freighterService } from '../services/stellar/freighter.service';
 import { useWalletStore } from './wallet.store';
+import { analyticsService } from '../services/analytics.service';
 
 export type PaymentProgressStatus =
   | 'idle'
@@ -86,9 +87,23 @@ export const usePaymentStore = create<PaymentState>((set, get) => ({
             createIntent.unsignedXdr,
             fromWallet,
           );
+          analyticsService.trackWalletInteraction('SOROBAN_XDR_SIGNED', {
+            walletAddress: fromWallet,
+            network: createIntent.network,
+            entityType: 'escrow',
+            entityId: createIntent.escrowId,
+            metadata: { functionName: 'create_escrow' },
+          });
 
           set({ status: 'submitting' });
           await escrowsApi.submitCreate(createIntent.escrowId, signedCreateXdr, fromWallet);
+          analyticsService.trackWalletInteraction('ESCROW_ACTION_SUBMITTED', {
+            walletAddress: fromWallet,
+            network: createIntent.network,
+            entityType: 'escrow',
+            entityId: createIntent.escrowId,
+            metadata: { functionName: 'create_escrow' },
+          });
         }
 
         set({ status: 'preparing' });
@@ -114,6 +129,13 @@ export const usePaymentStore = create<PaymentState>((set, get) => ({
           depositIntent.unsignedXdr,
           fromWallet,
         );
+        analyticsService.trackWalletInteraction('SOROBAN_XDR_SIGNED', {
+          walletAddress: fromWallet,
+          network: depositIntent.network,
+          entityType: 'escrow',
+          entityId: depositIntent.escrowId,
+          metadata: { functionName: 'deposit', paymentId: depositIntent.paymentId },
+        });
 
         set({ status: 'submitting' });
         const submittedPayment = await escrowsApi.submitPublicDeposit(
@@ -122,6 +144,14 @@ export const usePaymentStore = create<PaymentState>((set, get) => ({
           fromWallet,
           depositIntent.paymentId,
         );
+        analyticsService.trackWalletInteraction('PAYMENT_SUBMITTED', {
+          walletAddress: fromWallet,
+          network: depositIntent.network,
+          entityType: 'payment',
+          entityId: submittedPayment.id,
+          transactionHash: submittedPayment.hash || undefined,
+          metadata: { paymentType: 'ESCROW' },
+        });
         sessionStorage.setItem(`lumora_last_payment_id:${publicToken}`, submittedPayment.id);
 
         set((state) => ({
@@ -177,9 +207,24 @@ export const usePaymentStore = create<PaymentState>((set, get) => ({
 
       set({ status: 'awaiting_signature' });
       const signedXdr = await freighterService.signClassicTransaction(intent.unsignedXdr, fromWallet);
+      analyticsService.trackWalletInteraction('PAYMENT_XDR_SIGNED', {
+        walletAddress: fromWallet,
+        network: intent.network,
+        entityType: 'payment_intent',
+        entityId: intent.id,
+        metadata: { invoiceId: intent.invoiceId, asset: intent.asset, amount: intent.amount },
+      });
 
       set({ status: 'submitting' });
       const submittedPayment = await paymentsApi.submitIntent(intent.id, signedXdr, fromWallet);
+      analyticsService.trackWalletInteraction('PAYMENT_SUBMITTED', {
+        walletAddress: fromWallet,
+        network: intent.network,
+        entityType: 'payment',
+        entityId: submittedPayment.id,
+        transactionHash: submittedPayment.hash || undefined,
+        metadata: { paymentType: 'DIRECT' },
+      });
       sessionStorage.setItem(`lumora_last_payment_id:${publicToken}`, submittedPayment.id);
 
       set({ status: 'confirming', currentPayment: submittedPayment });
@@ -195,6 +240,14 @@ export const usePaymentStore = create<PaymentState>((set, get) => ({
         currentPayment: confirmedPayment,
         payments: [confirmedPayment, ...state.payments.filter((payment) => payment.id !== confirmedPayment.id)],
       }));
+      analyticsService.trackWalletInteraction('PAYMENT_CONFIRMED', {
+        walletAddress: fromWallet,
+        network: intent.network,
+        entityType: 'payment',
+        entityId: confirmedPayment.id,
+        transactionHash: confirmedPayment.hash || undefined,
+        metadata: { invoiceId: confirmedPayment.invoiceId },
+      });
 
       return confirmedPayment;
     } catch (e) {

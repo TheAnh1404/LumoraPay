@@ -155,6 +155,31 @@ enum WebhookStatus {
   DISABLED
 }
 
+enum WalletInteractionType {
+  CONNECT
+  RESTORE
+  DISCONNECT
+  NETWORK_CHECK
+  BALANCE_CHECK
+  FAUCET_REQUEST
+  PAYMENT_XDR_SIGNED
+  PAYMENT_SUBMITTED
+  PAYMENT_CONFIRMED
+  REFUND_XDR_SIGNED
+  SOROBAN_XDR_SIGNED
+  ESCROW_ACTION_SUBMITTED
+}
+
+enum FeedbackCategory {
+  GENERAL
+  UX
+  BUG
+  PAYMENT
+  WALLET
+  ESCROW
+  DOCUMENTATION
+}
+
 model User {
   id            String       @id @default(uuid()) @db.Uuid
   email         String?      @unique @db.VarChar(255)
@@ -175,6 +200,9 @@ model User {
   auditLogs     AuditLog[]
   refunds       Refund[]
   blockchainTxs BlockchainTransaction[]
+  walletInteractions WalletInteraction[]
+  productFeedback ProductFeedback[]
+  productEvents ProductEvent[]
 
   @@map("users")
 }
@@ -234,6 +262,9 @@ model Merchant {
   invoices        Invoice[]
   webhookEndpoints WebhookEndpoint[]
   auditLogs       AuditLog[]
+  walletInteractions WalletInteraction[]
+  productFeedback ProductFeedback[]
+  productEvents ProductEvent[]
 
   @@map("merchants")
 }
@@ -607,4 +638,67 @@ model AuditLog {
   merchant     Merchant? @relation(fields: [merchantId], references: [id])
 
   @@map("audit_logs")
+}
+
+model WalletInteraction {
+  id              String                @id @default(uuid()) @db.Uuid
+  userId          String?               @map("user_id") @db.Uuid
+  merchantId      String?               @map("merchant_id") @db.Uuid
+  walletAddress   String                @map("wallet_address") @db.VarChar(255)
+  network         WalletNetwork
+  interactionType WalletInteractionType @map("interaction_type")
+  route           String?               @db.VarChar(255)
+  entityType      String?               @map("entity_type") @db.VarChar(80)
+  entityId        String?               @map("entity_id") @db.VarChar(255)
+  transactionHash String?               @map("transaction_hash") @db.VarChar(255)
+  metadata        Json
+  createdAt       DateTime              @default(now()) @map("created_at") @db.Timestamptz
+
+  user            User?                 @relation(fields: [userId], references: [id])
+  merchant        Merchant?             @relation(fields: [merchantId], references: [id])
+
+  @@index([walletAddress, createdAt])
+  @@index([userId, createdAt])
+  @@index([merchantId, createdAt])
+  @@map("wallet_interactions")
+}
+
+model ProductFeedback {
+  id             String           @id @default(uuid()) @db.Uuid
+  userId         String?          @map("user_id") @db.Uuid
+  merchantId     String?          @map("merchant_id") @db.Uuid
+  walletAddress  String?          @map("wallet_address") @db.VarChar(255)
+  category       FeedbackCategory @default(GENERAL)
+  rating         Int
+  message        String           @db.Text
+  contactConsent Boolean          @default(false) @map("contact_consent")
+  metadata       Json
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz
+
+  user           User?            @relation(fields: [userId], references: [id])
+  merchant       Merchant?        @relation(fields: [merchantId], references: [id])
+
+  @@index([merchantId, createdAt])
+  @@index([rating])
+  @@map("product_feedback")
+}
+
+model ProductEvent {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String?   @map("user_id") @db.Uuid
+  merchantId    String?   @map("merchant_id") @db.Uuid
+  sessionId     String?   @map("session_id") @db.VarChar(255)
+  eventName     String    @map("event_name") @db.VarChar(120)
+  route         String?   @db.VarChar(255)
+  walletAddress String?   @map("wallet_address") @db.VarChar(255)
+  properties    Json
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  user          User?     @relation(fields: [userId], references: [id])
+  merchant      Merchant? @relation(fields: [merchantId], references: [id])
+
+  @@index([eventName, createdAt])
+  @@index([sessionId, createdAt])
+  @@index([merchantId, createdAt])
+  @@map("product_events")
 }

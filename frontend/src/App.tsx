@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import LandingPage from './pages/LandingPage';
 import DashboardOverview from './pages/DashboardOverview';
 import InvoiceList from './pages/InvoiceList';
@@ -21,6 +21,63 @@ import TransactionHistory from './pages/TransactionHistory';
 import DesignGuide from './pages/DesignGuide';
 import NotFound from './pages/NotFound';
 import useWalletStore from './stores/wallet.store';
+import { analyticsService } from './services/analytics.service';
+
+function RouteAnalytics() {
+  const location = useLocation();
+
+  useEffect(() => {
+    analyticsService.trackEvent('page_view', {
+      path: location.pathname,
+      search: location.search,
+    });
+  }, [location.pathname, location.search]);
+
+  return null;
+}
+
+function RuntimeMonitoring() {
+  useEffect(() => {
+    const navigation = performance.getEntriesByType('navigation')[0] as
+      | PerformanceNavigationTiming
+      | undefined;
+    if (navigation) {
+      analyticsService.trackEvent('page_performance', {
+        durationMs: Math.round(navigation.duration),
+        domContentLoadedMs: Math.round(navigation.domContentLoadedEventEnd),
+        transferSizeBytes: navigation.transferSize,
+      });
+    }
+
+    const handleError = (event: ErrorEvent) => {
+      analyticsService.trackEvent('client_error', {
+        message: event.message.slice(0, 240),
+        source: event.filename,
+        line: event.lineno,
+        column: event.colno,
+      });
+    };
+
+    const handleRejection = (event: PromiseRejectionEvent) => {
+      const reason =
+        event.reason instanceof Error
+          ? event.reason.message
+          : String(event.reason || 'Unhandled promise rejection');
+      analyticsService.trackEvent('client_unhandled_rejection', {
+        message: reason.slice(0, 240),
+      });
+    };
+
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleRejection);
+    return () => {
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleRejection);
+    };
+  }, []);
+
+  return null;
+}
 
 function App() {
   const restoreConnection = useWalletStore((state) => state.restoreConnection);
@@ -31,6 +88,8 @@ function App() {
 
   return (
     <BrowserRouter>
+      <RuntimeMonitoring />
+      <RouteAnalytics />
       <Routes>
         {/* Public Marketing Route */}
         <Route path="/" element={<LandingPage />} />

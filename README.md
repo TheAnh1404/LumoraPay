@@ -14,6 +14,7 @@ The current production-ready path is direct XLM invoice payment with backend XDR
 - Horizon confirmation before invoices, payments, refunds, and blockchain transaction records are marked successful.
 - Receipt pages with transaction hash, ledger, fee, source, destination, memo, network, and Stellar Expert links.
 - Soroban `invoice-registry` and `payment-escrow` contracts with events, auth checks, escrow deposit/release/refund/dispute flows, and Rust tests.
+- Pilot evidence capture for Level 4 review: analytics events, client error/performance monitoring, wallet interaction proofs, readiness overview, and feedback collection.
 - Prisma schema for users, wallets, merchants, invoices, payments, refunds, escrows, blockchain transactions, contract deployments, contract events, webhooks, and audit logs.
 
 ## Tech Stack
@@ -55,7 +56,7 @@ LumoraPay/
     contracts/payment-escrow/
 
   docs/                     Audits, API mapping, E2E reports, Freighter checklist
-  scripts/                  Integration helper scripts
+  scripts/                  Integration and Testnet deployment helper scripts
 ```
 
 ## Architecture
@@ -246,8 +247,20 @@ All backend routes are mounted under `/api/v1`.
 | Stellar | `/stellar/faucet` |
 | Contracts | `/contracts/config`, `/contracts/invoice-registry/health`, `/contracts/payment-escrow/health` |
 | Escrows | `/public/invoices/:publicToken/escrow-intents`, `/escrows/:id/*` |
+| Pilot evidence | `/pilot/events`, `/pilot/wallet-interactions`, `/pilot/feedback`, `/pilot/overview` |
 
 See `docs/13_API_FRONTEND_MAPPING.md` for the detailed frontend-to-API mapping.
+
+## Level 4 Pilot Evidence
+
+The app includes internal pilot evidence endpoints for production MVP review:
+
+- `/pilot/events` records product analytics, page performance, and client-side runtime errors.
+- `/pilot/wallet-interactions` records authenticated wallet interactions, including connect, restore, faucet, signed XDR, submitted payment, confirmed payment, refund signing, and Soroban signing.
+- `/pilot/feedback` stores user feedback from the Settings page.
+- `/pilot/overview` summarizes verified wallets, unique interacted wallets, feedback count, product events, and contract readiness.
+
+The Settings page shows a Level 4 evidence card and feedback form. Use `docs/17_LEVEL4_PRODUCTION_MVP_RUNBOOK.md` for the full production deployment, 10-user pilot, GitHub, commit, contract deployment, and demo video checklist.
 
 ## Smart Contracts
 
@@ -326,6 +339,16 @@ cargo test
 stellar contract build
 ```
 
+Deploy contracts to Stellar Testnet from the repository root after configuring a funded Stellar CLI identity:
+
+```powershell
+.\scripts\deploy-contracts-testnet.ps1 `
+  -SourceAccount lumora-deployer `
+  -AdminPublicKey GADMIN_PUBLIC_KEY `
+  -FeeRecipientPublicKey GFEE_RECIPIENT_PUBLIC_KEY `
+  -PlatformFeeBps 50
+```
+
 ## Testing Status
 
 Verified locally in this workspace:
@@ -370,6 +393,7 @@ Additional documented checks:
 - `docs/14_FREIGHTER_E2E_CHECKLIST.md` - manual Freighter E2E checklist.
 - `docs/15_FULL_INTEGRATION_REPORT.md` - full integration report.
 - `docs/16_TESTNET_E2E_REPORT.md` - Testnet E2E report and remaining blockers.
+- `docs/17_LEVEL4_PRODUCTION_MVP_RUNBOOK.md` - Level 4 deployment, onboarding, feedback, demo, and review checklist.
 
 ## Roadmap
 

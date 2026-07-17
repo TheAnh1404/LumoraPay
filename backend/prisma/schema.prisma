@@ -1,0 +1,610 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum WalletNetwork {
+  TESTNET
+  MAINNET
+}
+
+enum WalletVerificationStatus {
+  UNVERIFIED
+  VERIFIED
+  REVOKED
+}
+
+enum MerchantStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum MerchantRole {
+  OWNER
+  ADMIN
+  ACCOUNTANT
+  DEVELOPER
+  SUPPORT
+}
+
+enum InvoiceStatus {
+  DRAFT
+  OPEN
+  PAYMENT_PENDING
+  PAID
+  PARTIALLY_PAID
+  EXPIRED
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  DISPUTED
+  FAILED
+}
+
+enum PaymentType {
+  DIRECT
+  ESCROW
+  MILESTONE
+}
+
+enum PaymentStatus {
+  CREATED
+  AWAITING_SIGNATURE
+  SIGNED
+  SUBMITTED
+  PENDING
+  CONFIRMED
+  FAILED
+  EXPIRED
+  REVERSED
+}
+
+enum PaymentDirection {
+  INCOMING
+  OUTGOING
+}
+
+enum AssetType {
+  NATIVE
+  STELLAR_ASSET
+  SOROBAN_TOKEN
+}
+
+enum RefundStatus {
+  CREATED
+  AWAITING_SIGNATURE
+  SUBMITTED
+  PENDING
+  CONFIRMED
+  FAILED
+}
+
+enum EscrowStatus {
+  CREATED
+  FUNDED
+  ACTIVE
+  RELEASE_PENDING
+  RELEASED
+  REFUND_PENDING
+  REFUNDED
+  DISPUTED
+  RESOLVED
+  EXPIRED
+  CANCELLED
+}
+
+enum MilestoneStatus {
+  PENDING
+  FUNDED
+  SUBMITTED
+  APPROVED
+  RELEASED
+  REJECTED
+  DISPUTED
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED_RELEASE
+  RESOLVED_REFUND
+  RESOLVED_SPLIT
+  CANCELLED
+}
+
+enum TransactionKind {
+  CLASSIC_PAYMENT
+  CONTRACT_CREATE
+  CONTRACT_INVOKE
+  ESCROW_DEPOSIT
+  ESCROW_RELEASE
+  ESCROW_REFUND
+  MILESTONE_RELEASE
+  DISPUTE_OPEN
+  DISPUTE_RESOLVE
+  REFUND
+}
+
+enum TransactionStatus {
+  BUILT
+  AWAITING_SIGNATURE
+  SIGNED
+  SUBMITTED
+  PENDING
+  SUCCESS
+  FAILED
+  NOT_FOUND
+}
+
+enum WebhookStatus {
+  PENDING
+  DELIVERED
+  FAILED
+  RETRYING
+  DISABLED
+}
+
+model User {
+  id            String       @id @default(uuid()) @db.Uuid
+  email         String?      @unique @db.VarChar(255)
+  passwordHash  String?      @map("password_hash") @db.VarChar(255)
+  displayName   String       @map("display_name") @db.VarChar(255)
+  avatarUrl     String?      @map("avatar_url") @db.Text
+  status        UserStatus   @default(ACTIVE)
+  lastLoginAt   DateTime?    @map("last_login_at") @db.Timestamptz
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt     DateTime?    @map("deleted_at") @db.Timestamptz
+
+  wallets       Wallet[]
+  merchants     Merchant[]
+  memberships   MerchantMember[]
+  disputes      Dispute[]    @relation("DisputeOpener")
+  resolvedDisputes Dispute[] @relation("DisputeResolver")
+  auditLogs     AuditLog[]
+  refunds       Refund[]
+  blockchainTxs BlockchainTransaction[]
+
+  @@map("users")
+}
+
+model AuthNonce {
+  id            String        @id @default(uuid()) @db.Uuid
+  walletAddress String        @map("wallet_address") @db.VarChar(255)
+  nonce         String        @unique @db.VarChar(255)
+  message       String        @db.Text
+  network       WalletNetwork
+  expiresAt     DateTime      @map("expires_at") @db.Timestamptz
+  usedAt        DateTime?     @map("used_at") @db.Timestamptz
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("auth_nonces")
+}
+
+model Wallet {
+  id                 String                   @id @default(uuid()) @db.Uuid
+  userId             String                   @map("user_id") @db.Uuid
+  publicKey          String                   @map("public_key") @db.VarChar(255)
+  network            WalletNetwork
+  label              String?                  @db.VarChar(255)
+  isPrimary          Boolean                  @default(false) @map("is_primary")
+  verificationStatus WalletVerificationStatus @default(UNVERIFIED) @map("verification_status")
+  verifiedAt         DateTime?                @map("verified_at") @db.Timestamptz
+  lastSyncedLedger   BigInt?                  @map("last_synced_ledger")
+  createdAt          DateTime                 @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime                 @updatedAt @map("updated_at") @db.Timestamptz
+
+  user               User                     @relation(fields: [userId], references: [id])
+  merchants          Merchant[]               @relation("MerchantDefaultWallet")
+  transactions       BlockchainTransaction[]
+
+  @@unique([publicKey, network])
+  @@map("wallets")
+}
+
+model Merchant {
+  id              String           @id @default(uuid()) @db.Uuid
+  ownerUserId     String           @map("owner_user_id") @db.Uuid
+  businessName    String           @map("business_name") @db.VarChar(255)
+  slug            String           @unique @db.VarChar(255)
+  logoUrl         String?          @map("logo_url") @db.Text
+  description     String?          @db.Text
+  supportEmail    String?          @map("support_email") @db.VarChar(255)
+  status          MerchantStatus   @default(ACTIVE)
+  defaultWalletId String           @map("default_wallet_id") @db.Uuid
+  checkoutAccent  String?          @map("checkout_accent") @db.VarChar(255)
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+
+  owner           User             @relation(fields: [ownerUserId], references: [id])
+  defaultWallet   Wallet           @relation("MerchantDefaultWallet", fields: [defaultWalletId], references: [id])
+  members         MerchantMember[]
+  customers       Customer[]
+  invoices        Invoice[]
+  webhookEndpoints WebhookEndpoint[]
+  auditLogs       AuditLog[]
+
+  @@map("merchants")
+}
+
+model MerchantMember {
+  id         String       @id @default(uuid()) @db.Uuid
+  merchantId String       @map("merchant_id") @db.Uuid
+  userId     String       @map("user_id") @db.Uuid
+  role       MerchantRole @default(OWNER)
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+
+  merchant   Merchant     @relation(fields: [merchantId], references: [id])
+  user       User         @relation(fields: [userId], references: [id])
+
+  @@unique([merchantId, userId])
+  @@map("merchant_members")
+}
+
+model Customer {
+  id            String    @id @default(uuid()) @db.Uuid
+  merchantId    String    @map("merchant_id") @db.Uuid
+  name          String    @db.VarChar(255)
+  email         String?   @db.VarChar(255)
+  walletAddress String?   @map("wallet_address") @db.VarChar(255)
+  notes         String?   @db.Text
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+
+  merchant      Merchant  @relation(fields: [merchantId], references: [id])
+  invoices      Invoice[]
+
+  @@map("customers")
+}
+
+model SupportedAsset {
+  id         String        @id @default(uuid()) @db.Uuid
+  code       String        @db.VarChar(255)
+  name       String        @db.VarChar(255)
+  assetType  AssetType     @map("asset_type")
+  issuer     String?       @db.VarChar(255)
+  contractId String?       @map("contract_id") @db.VarChar(255)
+  network    WalletNetwork
+  decimals   Int
+  isActive   Boolean       @default(true) @map("is_active")
+  createdAt  DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  invoices   Invoice[]
+  payments   Payment[]
+  escrows    Escrow[]
+
+  @@map("supported_assets")
+}
+
+model Invoice {
+  id                String       @id @default(uuid()) @db.Uuid
+  merchantId        String       @map("merchant_id") @db.Uuid
+  customerId        String?      @map("customer_id") @db.Uuid
+  invoiceNumber     String       @unique @map("invoice_number") @db.VarChar(255)
+  publicToken       String       @unique @map("public_token") @db.VarChar(255)
+  title             String       @db.VarChar(255)
+  description       String?      @db.Text
+  assetId           String       @map("asset_id") @db.Uuid
+  subtotal          Decimal      @db.Decimal(30, 7)
+  feeAmount         Decimal      @default(0) @map("fee_amount") @db.Decimal(30, 7)
+  totalAmount       Decimal      @map("total_amount") @db.Decimal(30, 7)
+  amountPaid        Decimal      @default(0) @map("amount_paid") @db.Decimal(30, 7)
+  paymentType       PaymentType  @default(DIRECT) @map("payment_type")
+  status            InvoiceStatus @default(DRAFT)
+  memo              String       @db.VarChar(28)
+  destinationWallet String       @map("destination_wallet") @db.VarChar(255)
+  dueAt             DateTime?    @map("due_at") @db.Timestamptz
+  expiresAt         DateTime?    @map("expires_at") @db.Timestamptz
+  paidAt            DateTime?    @map("paid_at") @db.Timestamptz
+  cancelledAt       DateTime?    @map("cancelled_at") @db.Timestamptz
+  metadataHash      String?      @map("metadata_hash") @db.VarChar(255)
+  onChainInvoiceId  String?      @map("on_chain_invoice_id") @db.VarChar(255)
+  contractId        String?      @map("contract_id") @db.VarChar(255)
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+
+  merchant          Merchant     @relation(fields: [merchantId], references: [id])
+  customer          Customer?    @relation(fields: [customerId], references: [id])
+  asset             SupportedAsset @relation(fields: [assetId], references: [id])
+  items             InvoiceItem[]
+  payments          Payment[]
+  blockchainTxs     BlockchainTransaction[]
+  escrow            Escrow?
+
+  @@index([status])
+  @@index([merchantId])
+  @@index([publicToken])
+  @@index([dueAt])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          String   @id @default(uuid()) @db.Uuid
+  invoiceId   String   @map("invoice_id") @db.Uuid
+  name        String   @db.VarChar(255)
+  description String?  @db.Text
+  quantity    Decimal  @db.Decimal(20, 4)
+  unitPrice   Decimal  @map("unit_price") @db.Decimal(30, 7)
+  totalPrice  Decimal  @map("total_price") @db.Decimal(30, 7)
+  position    Int
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@map("invoice_items")
+}
+
+model Payment {
+  id              String           @id @default(uuid()) @db.Uuid
+  invoiceId       String           @map("invoice_id") @db.Uuid
+  assetId         String           @map("asset_id") @db.Uuid
+  payerWallet     String           @map("payer_wallet") @db.VarChar(255)
+  receiverWallet  String           @map("receiver_wallet") @db.VarChar(255)
+  expectedAmount  Decimal          @map("expected_amount") @db.Decimal(30, 7)
+  paidAmount      Decimal          @default(0) @map("paid_amount") @db.Decimal(30, 7)
+  direction       PaymentDirection
+  paymentType     PaymentType      @default(DIRECT) @map("payment_type")
+  status          PaymentStatus    @default(CREATED)
+  memo            String?          @db.VarChar(28)
+  transactionHash String?          @unique @map("transaction_hash") @db.VarChar(255)
+  operationId     String?          @map("operation_id") @db.VarChar(255)
+  ledger          BigInt?
+  ledgerClosedAt  DateTime?        @map("ledger_closed_at") @db.Timestamptz
+  sourceAccount   String?          @map("source_account") @db.VarChar(255)
+  feeCharged      BigInt?          @map("fee_charged")
+  resultCode      String?          @map("result_code") @db.VarChar(255)
+  failureReason   String?          @map("failure_reason") @db.Text
+  submittedAt     DateTime?        @map("submitted_at") @db.Timestamptz
+  confirmedAt     DateTime?        @map("confirmed_at") @db.Timestamptz
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz
+
+  invoice         Invoice          @relation(fields: [invoiceId], references: [id])
+  asset           SupportedAsset   @relation(fields: [assetId], references: [id])
+  blockchainTxs   BlockchainTransaction[]
+  refunds         Refund[]
+
+  @@index([transactionHash])
+  @@index([invoiceId])
+  @@index([status])
+  @@map("payments")
+}
+
+model BlockchainTransaction {
+  id              String            @id @default(uuid()) @db.Uuid
+  userId          String?           @map("user_id") @db.Uuid
+  walletId        String?           @map("wallet_id") @db.Uuid
+  invoiceId       String?           @map("invoice_id") @db.Uuid
+  paymentId       String?           @map("payment_id") @db.Uuid
+  escrowId        String?           @map("escrow_id") @db.Uuid
+  kind            TransactionKind
+  network         WalletNetwork
+  sourceAccount   String            @map("source_account") @db.VarChar(255)
+  transactionHash String?           @unique @map("transaction_hash") @db.VarChar(255)
+  unsignedXdr     String?           @map("unsigned_xdr") @db.Text
+  signedXdr       String?           @map("signed_xdr") @db.Text
+  status          TransactionStatus @default(BUILT)
+  ledger          BigInt?
+  feeCharged      BigInt?           @map("fee_charged")
+  resultCode      String?           @map("result_code") @db.VarChar(255)
+  resultXdr       String?           @map("result_xdr") @db.Text
+  errorCode       String?           @map("error_code") @db.VarChar(255)
+  errorMessage    String?           @map("error_message") @db.Text
+  submittedAt     DateTime?         @map("submitted_at") @db.Timestamptz
+  confirmedAt     DateTime?         @map("confirmed_at") @db.Timestamptz
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime          @updatedAt @map("updated_at") @db.Timestamptz
+
+  user            User?             @relation(fields: [userId], references: [id])
+  wallet          Wallet?           @relation(fields: [walletId], references: [id])
+  invoice         Invoice?          @relation(fields: [invoiceId], references: [id])
+  payment         Payment?          @relation(fields: [paymentId], references: [id])
+  escrow          Escrow?           @relation(fields: [escrowId], references: [id])
+
+  @@index([status])
+  @@index([transactionHash])
+  @@map("blockchain_transactions")
+}
+
+model Refund {
+  id                  String       @id @default(uuid()) @db.Uuid
+  paymentId           String       @map("payment_id") @db.Uuid
+  amount              Decimal      @db.Decimal(30, 7)
+  reason              String       @db.Text
+  status              RefundStatus @default(CREATED)
+  requestedByUserId   String       @map("requested_by_user_id") @db.Uuid
+  destinationWallet   String       @map("destination_wallet") @db.VarChar(255)
+  transactionHash     String?      @unique @map("transaction_hash") @db.VarChar(255)
+  ledger              BigInt?
+  confirmedAt         DateTime?    @map("confirmed_at") @db.Timestamptz
+  createdAt           DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+
+  payment             Payment      @relation(fields: [paymentId], references: [id])
+  requestedByUser     User         @relation(fields: [requestedByUserId], references: [id])
+
+  @@map("refunds")
+}
+
+model Escrow {
+  id              String       @id @default(uuid()) @db.Uuid
+  invoiceId       String       @unique @map("invoice_id") @db.Uuid
+  contractId      String       @map("contract_id") @db.VarChar(255)
+  onChainEscrowId String       @unique @map("on_chain_escrow_id") @db.VarChar(255)
+  payerWallet     String       @map("payer_wallet") @db.VarChar(255)
+  merchantWallet  String       @map("merchant_wallet") @db.VarChar(255)
+  assetId         String       @map("asset_id") @db.Uuid
+  amount          Decimal      @db.Decimal(30, 7)
+  platformFee     Decimal      @default(0) @map("platform_fee") @db.Decimal(30, 7)
+  status          EscrowStatus @default(CREATED)
+  releaseDeadline DateTime?    @map("release_deadline") @db.Timestamptz
+  fundedTxHash    String?      @map("funded_tx_hash") @db.VarChar(255)
+  releaseTxHash   String?      @map("release_tx_hash") @db.VarChar(255)
+  refundTxHash    String?      @map("refund_tx_hash") @db.VarChar(255)
+  fundedAt        DateTime?    @map("funded_at") @db.Timestamptz
+  releasedAt      DateTime?    @map("released_at") @db.Timestamptz
+  refundedAt      DateTime?    @map("refunded_at") @db.Timestamptz
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+
+  invoice         Invoice      @relation(fields: [invoiceId], references: [id])
+  asset           SupportedAsset @relation(fields: [assetId], references: [id])
+  milestones      Milestone[]
+  disputes        Dispute[]
+  blockchainTxs   BlockchainTransaction[]
+
+  @@index([onChainEscrowId])
+  @@map("escrows")
+}
+
+model Milestone {
+  id                 String          @id @default(uuid()) @db.Uuid
+  escrowId           String          @map("escrow_id") @db.Uuid
+  onChainMilestoneId Int             @map("on_chain_milestone_id")
+  title              String          @db.VarChar(255)
+  description        String?         @db.Text
+  amount             Decimal         @db.Decimal(30, 7)
+  position           Int
+  status             MilestoneStatus @default(PENDING)
+  submittedAt        DateTime?       @map("submitted_at") @db.Timestamptz
+  approvedAt         DateTime?       @map("approved_at") @db.Timestamptz
+  releasedAt         DateTime?       @map("released_at") @db.Timestamptz
+  releaseTxHash      String?         @map("release_tx_hash") @db.VarChar(255)
+  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime        @updatedAt @map("updated_at") @db.Timestamptz
+
+  escrow             Escrow          @relation(fields: [escrowId], references: [id], onDelete: Cascade)
+
+  @@map("milestones")
+}
+
+model Dispute {
+  id                String        @id @default(uuid()) @db.Uuid
+  escrowId          String        @map("escrow_id") @db.Uuid
+  openedByUserId    String        @map("opened_by_user_id") @db.Uuid
+  reason            String        @db.VarChar(255)
+  description       String        @db.Text
+  status            DisputeStatus @default(OPEN)
+  resolutionNote    String?       @map("resolution_note") @db.Text
+  merchantAmount    Decimal?      @map("merchant_amount") @db.Decimal(30, 7)
+  customerAmount    Decimal?      @map("customer_amount") @db.Decimal(30, 7)
+  resolutionTxHash  String?       @map("resolution_tx_hash") @db.VarChar(255)
+  resolvedByUserId  String?       @map("resolved_by_user_id") @db.Uuid
+  openedAt          DateTime      @default(now()) @map("opened_at") @db.Timestamptz
+  resolvedAt        DateTime?     @map("resolved_at") @db.Timestamptz
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  escrow            Escrow        @relation(fields: [escrowId], references: [id])
+  openedByUser      User          @relation("DisputeOpener", fields: [openedByUserId], references: [id])
+  resolvedByUser    User?         @relation("DisputeResolver", fields: [resolvedByUserId], references: [id])
+
+  @@map("disputes")
+}
+
+model ContractDeployment {
+  id                   String        @id @default(uuid()) @db.Uuid
+  name                 String        @db.VarChar(255)
+  version              String        @db.VarChar(255)
+  network              WalletNetwork
+  wasmHash             String        @map("wasm_hash") @db.VarChar(255)
+  contractId           String        @unique @map("contract_id") @db.VarChar(255)
+  deployerPublicKey    String        @map("deployer_public_key") @db.VarChar(255)
+  deploymentTxHash     String        @unique @map("deployment_tx_hash") @db.VarChar(255)
+  initializationTxHash String?       @map("initialization_tx_hash") @db.VarChar(255)
+  deployedAt           DateTime      @map("deployed_at") @db.Timestamptz
+  isActive             Boolean       @default(true) @map("is_active")
+  metadata             Json
+  createdAt            DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("contract_deployments")
+}
+
+model ContractEvent {
+  id              String   @id @default(uuid()) @db.Uuid
+  contractId      String   @map("contract_id") @db.VarChar(255)
+  transactionHash String   @map("transaction_hash") @db.VarChar(255)
+  ledger          BigInt
+  eventIndex      Int      @map("event_index")
+  eventType       String   @map("event_type") @db.VarChar(255)
+  topics          Json
+  data            Json
+  invoiceId       String?  @map("invoice_id") @db.Uuid
+  escrowId        String?  @map("escrow_id") @db.Uuid
+  processedAt     DateTime @map("processed_at") @db.Timestamptz
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([transactionHash, eventIndex])
+  @@index([ledger, contractId])
+  @@map("contract_events")
+}
+
+model WebhookEndpoint {
+  id               String            @id @default(uuid()) @db.Uuid
+  merchantId       String            @map("merchant_id") @db.Uuid
+  url              String            @db.Text
+  secretEncrypted  String            @map("secret_encrypted") @db.Text
+  isActive         Boolean           @default(true) @map("is_active")
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz
+
+  merchant         Merchant          @relation(fields: [merchantId], references: [id])
+  deliveries       WebhookDelivery[]
+
+  @@map("webhook_endpoints")
+}
+
+model WebhookDelivery {
+  id             String        @id @default(uuid()) @db.Uuid
+  endpointId     String        @map("endpoint_id") @db.Uuid
+  eventType      String        @map("event_type") @db.VarChar(255)
+  eventId        String        @map("event_id") @db.VarChar(255)
+  payload        Json
+  status         WebhookStatus @default(PENDING)
+  attemptCount   Int           @default(0) @map("attempt_count")
+  responseStatus Int?          @map("response_status")
+  responseBody   String?       @map("response_body") @db.Text
+  nextRetryAt    DateTime?     @map("next_retry_at") @db.Timestamptz
+  deliveredAt    DateTime?     @map("delivered_at") @db.Timestamptz
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  endpoint       WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextRetryAt])
+  @@map("webhook_deliveries")
+}
+
+model AuditLog {
+  id           String    @id @default(uuid()) @db.Uuid
+  actorUserId  String?   @map("actor_user_id") @db.Uuid
+  merchantId   String?   @map("merchant_id") @db.Uuid
+  action       String    @db.VarChar(255)
+  entityType   String    @map("entity_type") @db.VarChar(255)
+  entityId     String?   @map("entity_id") @db.VarChar(255)
+  requestId    String?   @map("request_id") @db.VarChar(255)
+  ipAddress    String?   @map("ip_address") @db.VarChar(255)
+  userAgent    String?   @map("user_agent") @db.Text
+  metadata     Json
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  actorUser    User?     @relation(fields: [actorUserId], references: [id])
+  merchant     Merchant? @relation(fields: [merchantId], references: [id])
+
+  @@map("audit_logs")
+}

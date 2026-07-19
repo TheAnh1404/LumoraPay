@@ -1,5 +1,6 @@
 import { apiClient } from './api-client';
 import type {
+  PilotEvidenceDto,
   PilotEventRequest,
   PilotOverviewDto,
   ProductFeedbackRequest,
@@ -21,4 +22,5 @@ export const pilotApi = {
   feedback: (body: ProductFeedbackRequest) =>
     apiClient.post<{ id: string; submitted: boolean }>('/pilot/feedback', body),
   overview: () => apiClient.get<PilotOverviewDto>('/pilot/overview'),
+  evidence: () => apiClient.get<PilotEvidenceDto>('/pilot/evidence'),
 };

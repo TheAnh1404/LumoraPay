@@ -39,7 +39,7 @@ export interface SorobanSubmissionResult {
   fee: string;
   createdAt: Date;
   resultXdr: string;
-  events: any[];
+  events: unknown[];
 }
 
 @Injectable()
@@ -89,7 +89,9 @@ export class SorobanService {
   }
 
   bytesN32(value: string) {
-    return StellarSdk.xdr.ScVal.scvBytes(Buffer.from(this.bytesN32Hex(value), 'hex'));
+    return StellarSdk.xdr.ScVal.scvBytes(
+      Buffer.from(this.bytesN32Hex(value), 'hex'),
+    );
   }
 
   bytesN32Hex(value: string) {
@@ -193,7 +195,7 @@ export class SorobanService {
     };
   }
 
-  async simulateInvocation(input: BuildInvocationInput) {
+  async simulateInvocation(input: BuildInvocationInput): Promise<unknown> {
     this.stellarService.validatePublicKey(input.source);
     this.validateContractId(input.contractId);
     const account = await this.server.getAccount(input.source);
@@ -277,7 +279,10 @@ export class SorobanService {
     if (call.functionName !== expected.functionName) {
       throw new BadRequestException('Signed transaction function mismatch');
     }
-    if (expected.argCount !== undefined && call.args.length !== expected.argCount) {
+    if (
+      expected.argCount !== undefined &&
+      call.args.length !== expected.argCount
+    ) {
       throw new BadRequestException('Signed transaction argument mismatch');
     }
     if (expected.firstArgHex) {
@@ -350,7 +355,7 @@ export class SorobanService {
     };
   }
 
-  toJsonSafe(value: unknown): any {
+  toJsonSafe(value: unknown): unknown {
     if (typeof value === 'bigint') {
       return value.toString();
     }

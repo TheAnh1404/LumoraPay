@@ -22,6 +22,7 @@ import DesignGuide from './pages/DesignGuide';
 import NotFound from './pages/NotFound';
 import useWalletStore from './stores/wallet.store';
 import { analyticsService } from './services/analytics.service';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 function RouteAnalytics() {
   const location = useLocation();
@@ -79,21 +80,15 @@ function RuntimeMonitoring() {
   return null;
 }
 
-function App() {
-  const restoreConnection = useWalletStore((state) => state.restoreConnection);
-
-  useEffect(() => {
-    restoreConnection().catch(() => undefined);
-  }, [restoreConnection]);
+function AppRoutes() {
+  const location = useLocation();
 
   return (
-    <BrowserRouter>
-      <RuntimeMonitoring />
-      <RouteAnalytics />
+    <ErrorBoundary key={location.pathname}>
       <Routes>
         {/* Public Marketing Route */}
         <Route path="/" element={<LandingPage />} />
-        
+
         {/* Dashboard Private App Routes */}
         <Route path="/app" element={<DashboardOverview />} />
         <Route path="/app/invoices" element={<InvoiceList />} />
@@ -111,20 +106,36 @@ function App() {
         <Route path="/pay/:publicToken/processing" element={<ProcessingPayment />} />
         <Route path="/pay/:publicToken/success" element={<PaymentSuccess />} />
         <Route path="/pay/:publicToken/failed" element={<PaymentFailed />} />
-        
+
         {/* Blockchain Printable Receipt Route */}
         <Route path="/receipt/:receiptId" element={<Receipt />} />
-        
+
         {/* Developer Sandbox Testing Utilities */}
         <Route path="/faucet" element={<TestnetFaucet />} />
         <Route path="/wallet/history" element={<TransactionHistory />} />
-        
+
         {/* Style Guide catalog */}
         <Route path="/design-guide" element={<DesignGuide />} />
 
         {/* Fallback 404 handler */}
         <Route path="/*" element={<NotFound />} />
       </Routes>
+    </ErrorBoundary>
+  );
+}
+
+function App() {
+  const restoreConnection = useWalletStore((state) => state.restoreConnection);
+
+  useEffect(() => {
+    restoreConnection().catch(() => undefined);
+  }, [restoreConnection]);
+
+  return (
+    <BrowserRouter>
+      <RuntimeMonitoring />
+      <RouteAnalytics />
+      <AppRoutes />
     </BrowserRouter>
   );
 }

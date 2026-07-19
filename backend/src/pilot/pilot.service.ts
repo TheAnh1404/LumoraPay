@@ -219,6 +219,53 @@ export class PilotService {
     });
   }
 
+  async getEvidence(userId: string) {
+    const merchantId = await this.getMerchantId(userId);
+    const scope = merchantId ? { merchantId } : { userId };
+    const [overview, walletInteractions, feedback] = await Promise.all([
+      this.getOverview(userId),
+      this.prisma.walletInteraction.findMany({
+        where: scope,
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+        select: {
+          id: true,
+          walletAddress: true,
+          network: true,
+          interactionType: true,
+          route: true,
+          entityType: true,
+          entityId: true,
+          transactionHash: true,
+          createdAt: true,
+        },
+      }),
+      this.prisma.productFeedback.findMany({
+        where: scope,
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+        select: {
+          id: true,
+          walletAddress: true,
+          category: true,
+          rating: true,
+          message: true,
+          contactConsent: true,
+          createdAt: true,
+        },
+      }),
+    ]);
+
+    return {
+      generatedAt: new Date().toISOString(),
+      scope: merchantId ? 'merchant' : 'user',
+      merchantId,
+      overview,
+      walletInteractions,
+      feedback,
+    };
+  }
+
   async getOverview(userId: string) {
     const merchantId = await this.getMerchantId(userId);
     const [

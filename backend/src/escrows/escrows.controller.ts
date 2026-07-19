@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { EscrowsService } from './escrows.service';
 
@@ -76,7 +84,12 @@ export class EscrowsController {
   async prepareDispute(
     @Param('id') id: string,
     @Body()
-    body: { sourceWallet: string; evidenceHash?: string; reason?: string; description?: string },
+    body: {
+      sourceWallet: string;
+      evidenceHash?: string;
+      reason?: string;
+      description?: string;
+    },
   ) {
     return this.escrowsService.prepareAction(id, 'open_dispute', body);
   }

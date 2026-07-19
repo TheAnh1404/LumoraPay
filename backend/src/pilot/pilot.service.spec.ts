@@ -114,4 +114,31 @@ describe('PilotService', () => {
 
     expect(prisma.productFeedback.create).not.toHaveBeenCalled();
   });
+
+  it('builds pilot evidence scoped to the current merchant', async () => {
+    const prisma = createPrismaMock();
+    const service = new PilotService(prisma as unknown as PrismaService);
+
+    await expect(service.getEvidence('user-id')).resolves.toEqual(
+      expect.objectContaining({
+        scope: 'merchant',
+        merchantId: 'merchant-id',
+        overview: expect.objectContaining({
+          totals: expect.objectContaining({
+            verifiedWallets: 10,
+            uniqueInteractedWallets: 1,
+          }),
+        }),
+        walletInteractions: [{ walletAddress }],
+        feedback: [],
+      }),
+    );
+
+    expect(prisma.walletInteraction.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { merchantId: 'merchant-id' },
+        take: 100,
+      }),
+    );
+  });
 });

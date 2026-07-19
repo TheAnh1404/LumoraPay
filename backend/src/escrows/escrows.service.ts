@@ -5,16 +5,24 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ContractsService } from '../contracts/contracts.service';
 import { SorobanService } from '../stellar/soroban.service';
 import { StellarService } from '../stellar/stellar.service';
 
-type EscrowAction =
-  | 'release'
-  | 'refund'
-  | 'open_dispute'
-  | 'resolve_dispute';
+type EscrowAction = 'release' | 'refund' | 'open_dispute' | 'resolve_dispute';
+type EscrowInvoiceTiming = { dueAt?: Date | null };
+type EscrowAssetConfig = {
+  code: string;
+  assetType: string;
+  contractId?: string | null;
+};
+type HumanizedContractEvent = {
+  contractId?: string;
+  topics?: unknown[];
+  data?: unknown;
+};
 
 @Injectable()
 export class EscrowsService {
@@ -89,17 +97,18 @@ export class EscrowsService {
     return escrow;
   }
 
-  private getReleaseDeadline(invoice: any) {
+  private getReleaseDeadline(invoice: EscrowInvoiceTiming) {
     if (invoice.dueAt && invoice.dueAt > new Date()) {
       return invoice.dueAt;
     }
     return new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
   }
 
-  private getAssetContractId(asset: any) {
-    if (asset.contractId) {
-      this.sorobanService.validateContractId(asset.contractId);
-      return asset.contractId;
+  private getAssetContractId(asset: EscrowAssetConfig) {
+    const contractId = asset.contractId;
+    if (contractId) {
+      this.sorobanService.validateContractId(contractId);
+      return contractId;
     }
     if (asset.code === 'XLM' && asset.assetType === 'NATIVE') {
       return this.sorobanService.getNativeAssetContractId();
@@ -122,7 +131,9 @@ export class EscrowsService {
       this.sorobanService.i128(
         this.sorobanService.amountToStroops(invoice.totalAmount.toString()),
       ),
-      this.sorobanService.u64(escrow.releaseDeadline || this.getReleaseDeadline(invoice)),
+      this.sorobanService.u64(
+        escrow.releaseDeadline || this.getReleaseDeadline(invoice),
+      ),
     ];
   }
 
@@ -151,6 +162,26 @@ export class EscrowsService {
         : null,
       receiptUrl: `/receipt/${payment.id}`,
     };
+  }
+
+  private toPrismaJson(
+    value: unknown,
+  ): Prisma.InputJsonValue | typeof Prisma.JsonNull {
+    const safeValue = this.sorobanService.toJsonSafe(value);
+    return safeValue === null
+      ? Prisma.JsonNull
+      : (safeValue as Prisma.InputJsonValue);
+  }
+
+  private formatRemainingBalance(value: unknown) {
+    if (
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'bigint'
+    ) {
+      return this.sorobanService.stroopsToAmount(value);
+    }
+    return null;
   }
 
   private formatEscrow(escrow: any) {
@@ -190,15 +221,16 @@ export class EscrowsService {
 
   private async saveContractEvents(
     contractId: string,
-    result: { hash: string; ledger: number; events: any[] },
+    result: { hash: string; ledger: number; events: unknown[] },
     invoiceId?: string | null,
     escrowId?: string | null,
   ) {
-    for (const [index, event] of (result.events || []).entries()) {
+    for (const [index, rawEvent] of (result.events || []).entries()) {
+      const event = rawEvent as HumanizedContractEvent;
+      const topics = Array.isArray(event.topics) ? event.topics : [];
+      const data = event.data ?? null;
       const eventType =
-        typeof event?.topics?.[0] === 'string'
-          ? event.topics[0]
-          : 'contract_event';
+        typeof topics[0] === 'string' ? topics[0] : 'contract_event';
       await this.prisma.contractEvent.upsert({
         where: {
           transactionHash_eventIndex: {
@@ -212,16 +244,16 @@ export class EscrowsService {
           ledger: BigInt(result.ledger),
           eventIndex: index,
           eventType,
-          topics: this.sorobanService.toJsonSafe(event.topics || []),
-          data: this.sorobanService.toJsonSafe(event.data ?? null),
+          topics: this.toPrismaJson(topics),
+          data: this.toPrismaJson(data),
           invoiceId: invoiceId || null,
           escrowId: escrowId || null,
           processedAt: new Date(),
         },
         update: {
           eventType,
-          topics: this.sorobanService.toJsonSafe(event.topics || []),
-          data: this.sorobanService.toJsonSafe(event.data ?? null),
+          topics: this.toPrismaJson(topics),
+          data: this.toPrismaJson(data),
           processedAt: new Date(),
         },
       });
@@ -234,7 +266,9 @@ export class EscrowsService {
         escrowId,
         kind,
         ...(paymentId ? { paymentId } : {}),
-        status: { in: ['AWAITING_SIGNATURE', 'SIGNED', 'SUBMITTED', 'PENDING'] },
+        status: {
+          in: ['AWAITING_SIGNATURE', 'SIGNED', 'SUBMITTED', 'PENDING'],
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -270,10 +304,7 @@ export class EscrowsService {
       contract: {
         escrow: escrowState,
         remainingBalanceStroops: remainingBalance,
-        remainingBalance:
-          remainingBalance !== null && remainingBalance !== undefined
-            ? this.sorobanService.stroopsToAmount(remainingBalance)
-            : null,
+        remainingBalance: this.formatRemainingBalance(remainingBalance),
       },
     };
   }
@@ -301,7 +332,11 @@ export class EscrowsService {
     }
 
     const existingConfirmedPayment = await this.prisma.payment.findFirst({
-      where: { invoiceId: invoice.id, paymentType: 'ESCROW', status: 'CONFIRMED' },
+      where: {
+        invoiceId: invoice.id,
+        paymentType: 'ESCROW',
+        status: 'CONFIRMED',
+      },
     });
     if (existingConfirmedPayment) {
       throw new BadRequestException('Escrow invoice is already funded');
@@ -341,7 +376,11 @@ export class EscrowsService {
     }
 
     const createSuccess = await this.prisma.blockchainTransaction.findFirst({
-      where: { escrowId: escrow.id, kind: 'CONTRACT_CREATE', status: 'SUCCESS' },
+      where: {
+        escrowId: escrow.id,
+        kind: 'CONTRACT_CREATE',
+        status: 'SUCCESS',
+      },
       orderBy: { confirmedAt: 'desc' },
     });
 
@@ -477,10 +516,16 @@ export class EscrowsService {
     }
 
     const createSuccess = await this.prisma.blockchainTransaction.findFirst({
-      where: { escrowId: escrow.id, kind: 'CONTRACT_CREATE', status: 'SUCCESS' },
+      where: {
+        escrowId: escrow.id,
+        kind: 'CONTRACT_CREATE',
+        status: 'SUCCESS',
+      },
     });
     if (!createSuccess) {
-      throw new BadRequestException('Create the escrow on-chain before deposit');
+      throw new BadRequestException(
+        'Create the escrow on-chain before deposit',
+      );
     }
 
     const prepared = await this.sorobanService.buildInvocation({
@@ -564,7 +609,9 @@ export class EscrowsService {
             invoiceId: escrow.invoiceId,
             payerWallet,
             paymentType: 'ESCROW',
-            status: { in: ['AWAITING_SIGNATURE', 'SIGNED', 'SUBMITTED', 'PENDING'] },
+            status: {
+              in: ['AWAITING_SIGNATURE', 'SIGNED', 'SUBMITTED', 'PENDING'],
+            },
           },
           include: { asset: true, invoice: true },
           orderBy: { createdAt: 'desc' },
@@ -682,7 +729,8 @@ export class EscrowsService {
                 where: { id: blockchainTx.id },
                 data: {
                   status: 'FAILED',
-                  errorMessage: e instanceof Error ? e.message : 'Deposit failed',
+                  errorMessage:
+                    e instanceof Error ? e.message : 'Deposit failed',
                 },
               }),
             ]
@@ -841,7 +889,9 @@ export class EscrowsService {
     if (action === 'refund') {
       const afterDeadline =
         escrow.releaseDeadline && new Date() > escrow.releaseDeadline;
-      const expected = afterDeadline ? escrow.payerWallet : escrow.merchantWallet;
+      const expected = afterDeadline
+        ? escrow.payerWallet
+        : escrow.merchantWallet;
       if (sourceWallet !== expected) {
         throw new BadRequestException(
           afterDeadline
@@ -858,7 +908,9 @@ export class EscrowsService {
 
     if (action === 'open_dispute') {
       if (sourceWallet !== escrow.payerWallet) {
-        throw new BadRequestException('Opening a dispute requires payer wallet');
+        throw new BadRequestException(
+          'Opening a dispute requires payer wallet',
+        );
       }
       const evidenceHash = this.sorobanService.bytesN32Hex(
         body?.evidenceHash ||

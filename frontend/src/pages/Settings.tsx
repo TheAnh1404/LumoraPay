@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import useWalletStore from '../stores/wallet.store';
-import { Shield, Check, Wallet, Building2, Copy } from 'lucide-react';
+import { Shield, Check, Wallet, Building2, Copy, Download } from 'lucide-react';
 import { merchantsApi } from '../services/api/merchants.api';
 import { hasAccessToken } from '../services/api/api-client';
 import { pilotApi } from '../services/api/pilot.api';
@@ -22,6 +22,8 @@ export const Settings: React.FC = () => {
   const [feedbackConsent, setFeedbackConsent] = useState(false);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [feedbackStatus, setFeedbackStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
+  const [evidenceStatus, setEvidenceStatus] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     if (!address || !hasAccessToken()) {
@@ -96,6 +98,38 @@ export const Settings: React.FC = () => {
       });
     } finally {
       setFeedbackLoading(false);
+    }
+  };
+
+  const handleExportEvidence = async () => {
+    if (!address || !hasAccessToken()) {
+      setEvidenceStatus({ type: 'error', text: 'Connect Freighter before exporting evidence.' });
+      return;
+    }
+
+    setEvidenceLoading(true);
+    setEvidenceStatus(null);
+    try {
+      const evidence = await pilotApi.evidence();
+      const blob = new Blob([JSON.stringify(evidence, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `lumorapay-pilot-evidence-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setEvidenceStatus({ type: 'success', text: 'Evidence export generated.' });
+    } catch (error) {
+      setEvidenceStatus({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Unable to export evidence',
+      });
+    } finally {
+      setEvidenceLoading(false);
     }
   };
 
@@ -311,6 +345,20 @@ export const Settings: React.FC = () => {
                     </span>
                   ))}
                 </div>
+                {evidenceStatus && (
+                  <div className={`${evidenceStatus.type === 'success' ? 'bg-green-50 border-success text-success' : 'bg-red-50 border-error text-error'} border rounded p-xs font-bold`}>
+                    {evidenceStatus.text}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={handleExportEvidence}
+                  disabled={evidenceLoading}
+                  className="flex w-full items-center justify-center gap-xs rounded border border-outline px-3 py-2 font-label-sm text-xs font-bold text-primary hover:border-secondary disabled:opacity-50"
+                >
+                  <Download size={14} />
+                  {evidenceLoading ? 'Exporting...' : 'Export Evidence'}
+                </button>
               </div>
             ) : (
               <p className="text-on-surface-variant">Connect Freighter to load pilot evidence.</p>

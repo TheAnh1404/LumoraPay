@@ -10,10 +10,8 @@ export class ContractsService {
   ) {}
 
   getConfig() {
-    const invoiceRegistryContractId =
-      this.getInvoiceRegistryContractId();
-    const paymentEscrowContractId =
-      this.getPaymentEscrowContractId();
+    const invoiceRegistryContractId = this.getInvoiceRegistryContractId();
+    const paymentEscrowContractId = this.getPaymentEscrowContractId();
     return {
       network: this.stellarService.getNetwork(),
       rpcUrl: this.configService.get<string>('stellar.rpcUrl') || '',
@@ -21,7 +19,8 @@ export class ContractsService {
       paymentEscrowContractId,
       invoiceRegistryConfigured: Boolean(invoiceRegistryContractId),
       paymentEscrowConfigured: Boolean(paymentEscrowContractId),
-      feeRecipient: this.configService.get<string>('stellar.feeRecipient') || '',
+      feeRecipient:
+        this.configService.get<string>('stellar.feeRecipient') || '',
       feeBps: this.configService.get<number>('stellar.feeBps') || 0,
     };
   }
@@ -33,7 +32,9 @@ export class ContractsService {
   }
 
   getPaymentEscrowContractId() {
-    return this.configService.get<string>('stellar.paymentEscrowContractId') || '';
+    return (
+      this.configService.get<string>('stellar.paymentEscrowContractId') || ''
+    );
   }
 
   getContractAdminPublicKey() {

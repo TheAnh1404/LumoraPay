@@ -41,10 +41,7 @@ jest.mock('@stellar/stellar-sdk', () => ({
             mockFreighterSignedPayload,
             mockLegacyFreighterSignedPayload,
             mockLegacyBase64SignedPayload,
-          ].includes(
-            data.toString('hex'),
-          ) &&
-          signature.equals(mockSignature),
+          ].includes(data.toString('hex')) && signature.equals(mockSignature),
       ),
     })),
   },

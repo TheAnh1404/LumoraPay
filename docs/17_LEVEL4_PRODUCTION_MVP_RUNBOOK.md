@@ -14,7 +14,7 @@ This document maps the Level 4 requirements to concrete Lumora Pay evidence, com
 | Proof of wallet interactions | `/pilot/wallet-interactions` records connect, restore, faucet, signed XDR, submitted payment, confirmed payment, refund, and Soroban actions. | Export DB rows or screenshots from `/pilot/overview`. |
 | Feedback collection | `/pilot/feedback` and Settings feedback form are implemented. | Feedback from users must be collected and exported. |
 | Production deployment | CI/CD deploy gate is present in `.github/workflows/ci.yml`. | Public frontend/backend production URLs and configured deployment secrets. |
-| Monitoring and analytics | `/pilot/events` captures page views, client runtime errors, page performance, and internal product events. `/pilot/overview` summarizes pilot readiness. | Optional external monitoring provider for production incidents. |
+| Monitoring and analytics | `/pilot/events` captures page views, render/runtime errors, page performance, and internal product events. `/health/readiness` exposes deploy readiness. `/pilot/overview` summarizes pilot readiness. | Optional external monitoring provider for production incidents. |
 | Project structure and documentation | Root README, docs, API mapping, Freighter checklist, E2E report, and this runbook exist. | Keep deployment-specific docs updated after launch. |
 | Smart contracts deployed on Stellar Testnet | `scripts/deploy-contracts-testnet.ps1` builds, deploys, initializes, and writes contract IDs. | Funded deployer identity/secret and deployed contract IDs. |
 | Minimum 15+ meaningful commits | CI is ready for GitHub. | Repository must be initialized/pushed and 15+ meaningful commits made. |
@@ -50,6 +50,8 @@ This document maps the Level 4 requirements to concrete Lumora Pay evidence, com
    - `JWT_ACCESS_SECRET`
    - `JWT_REFRESH_SECRET`
    - `FRONTEND_URL`
+   - `FRONTEND_URLS` if more than one production frontend origin is allowed
+   - `APP_VERSION`
    - `STELLAR_NETWORK=TESTNET`
    - `STELLAR_HORIZON_URL`
    - `STELLAR_RPC_URL`
@@ -67,6 +69,14 @@ This document maps the Level 4 requirements to concrete Lumora Pay evidence, com
    - `INVOICE_REGISTRY_CONTRACT_ID`
    - `PAYMENT_ESCROW_CONTRACT_ID`
 7. Run the manual production deploy gate from GitHub Actions with `deploy_production=true`.
+8. Run the production MVP verification script:
+   ```powershell
+   .\scripts\check-production-mvp.ps1 `
+     -FrontendUrl https://YOUR_FRONTEND_URL `
+     -ApiBaseUrl https://YOUR_BACKEND_URL/api/v1 `
+     -AccessToken YOUR_MERCHANT_JWT `
+     -GithubRepoUrl https://github.com/YOUR_ORG/YOUR_REPO
+   ```
 
 ## Stellar Testnet Contract Deployment
 
@@ -109,6 +119,7 @@ Check progress:
 
 ```text
 GET /api/v1/pilot/overview
+GET /api/v1/pilot/evidence
 ```
 
 Evidence to capture:
@@ -118,6 +129,7 @@ Evidence to capture:
 - Screenshot or export of feedback response count.
 - Sample rows from `wallet_interactions`.
 - Sample rows from `product_feedback`.
+- JSON export from Settings or `GET /api/v1/pilot/evidence`.
 
 ## Demo Video Checklist
 

@@ -329,3 +329,30 @@ export interface PilotOverviewDto {
     contractsConfigured: boolean;
   };
 }
+
+export interface PilotEvidenceDto {
+  generatedAt: string;
+  scope: 'merchant' | 'user';
+  merchantId?: string | null;
+  overview: PilotOverviewDto;
+  walletInteractions: {
+    id: string;
+    walletAddress: string;
+    network: WalletNetwork;
+    interactionType: WalletInteractionType;
+    route?: string | null;
+    entityType?: string | null;
+    entityId?: string | null;
+    transactionHash?: string | null;
+    createdAt: string;
+  }[];
+  feedback: {
+    id: string;
+    walletAddress?: string | null;
+    category: FeedbackCategory;
+    rating: number;
+    message: string;
+    contactConsent: boolean;
+    createdAt: string;
+  }[];
+}

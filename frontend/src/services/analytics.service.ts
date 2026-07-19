@@ -5,20 +5,32 @@ import type {
 } from '../types/api.types';
 
 const SESSION_KEY = 'lumora_pilot_session_id';
+let memorySessionId: string | null = null;
+
+function makeSessionId() {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 function getSessionId() {
-  const existing = sessionStorage.getItem(SESSION_KEY);
-  if (existing) return existing;
+  try {
+    const existing = sessionStorage.getItem(SESSION_KEY);
+    if (existing) return existing;
 
-  const id =
-    typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  sessionStorage.setItem(SESSION_KEY, id);
-  return id;
+    const id = makeSessionId();
+    sessionStorage.setItem(SESSION_KEY, id);
+    return id;
+  } catch {
+    memorySessionId ||= makeSessionId();
+    return memorySessionId;
+  }
 }
 
 function route() {
+  if (typeof window === 'undefined') {
+    return '/';
+  }
   return `${window.location.pathname}${window.location.search}`;
 }
 
@@ -30,25 +42,33 @@ function ignoreTrackingFailure(error: unknown) {
 
 export const analyticsService = {
   trackEvent: (eventName: string, properties: Record<string, unknown> = {}) => {
-    const body: PilotEventRequest = {
-      eventName,
-      route: route(),
-      sessionId: getSessionId(),
-      properties,
-    };
-    pilotApi.event(body).catch(ignoreTrackingFailure);
+    try {
+      const body: PilotEventRequest = {
+        eventName,
+        route: route(),
+        sessionId: getSessionId(),
+        properties,
+      };
+      pilotApi.event(body).catch(ignoreTrackingFailure);
+    } catch (error) {
+      ignoreTrackingFailure(error);
+    }
   },
 
   trackWalletInteraction: (
     interactionType: WalletInteractionRequest['interactionType'],
     input: Omit<WalletInteractionRequest, 'interactionType'> = {},
   ) => {
-    pilotApi
-      .walletInteraction({
-        interactionType,
-        route: route(),
-        ...input,
-      })
-      .catch(ignoreTrackingFailure);
+    try {
+      pilotApi
+        .walletInteraction({
+          interactionType,
+          route: route(),
+          ...input,
+        })
+        .catch(ignoreTrackingFailure);
+    } catch (error) {
+      ignoreTrackingFailure(error);
+    }
   },
 };

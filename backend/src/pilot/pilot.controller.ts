@@ -81,4 +81,10 @@ export class PilotController {
   async overview(@Req() req: PilotRequest) {
     return this.pilotService.getOverview(req.user.id);
   }
+
+  @Get('evidence')
+  @UseGuards(JwtAuthGuard)
+  async evidence(@Req() req: PilotRequest) {
+    return this.pilotService.getEvidence(req.user.id);
+  }
 }

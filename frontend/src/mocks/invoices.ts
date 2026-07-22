@@ -86,7 +86,7 @@ export const mockInvoices: Invoice[] = [
     id: "LM-2026-000125",
     invoiceNumber: "LM-2026-000125",
     title: "API Integration Project",
-    description: "Stellar anchor deposit/withdrawal bridge integration client side.",
+    description: "Stellar payment gateway integration client side.",
     amount: "75.00",
     asset: "XLM",
     dueDate: "2026-07-05",

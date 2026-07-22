@@ -86,6 +86,7 @@ interface WalletState {
   isInstalled: boolean;
   error: string | null;
   connect: () => Promise<string | null>;
+  connectClientWallet: () => Promise<string | null>;
   restoreConnection: () => Promise<string | null>;
   disconnect: () => void;
   setNetwork: (network: string) => void;
@@ -110,6 +111,49 @@ export const useWalletStore = create<WalletState>((set, get) => ({
     } catch {
       set({ isInstalled: false });
       return false;
+    }
+  },
+
+  connectClientWallet: async () => {
+    const current = get();
+    if (current.status === 'connected' && current.address) {
+      return current.address;
+    }
+
+    set({ status: 'connecting', error: null });
+    try {
+      const walletAddress = await walletService.connect();
+      const freighterNetwork = await walletService.getNetwork();
+      const detectedNetworkLabel = networkLabel(freighterNetwork);
+      const expectedNetwork = getConfiguredStellarNetwork();
+      let balance = '0.00000';
+      let balanceError: string | null = null;
+
+      try {
+        balance = await walletService.getBalance(walletAddress);
+      } catch (e) {
+        balanceError = e instanceof Error ? e.message : 'Unable to load wallet balance';
+      }
+
+      const connectedStatus = detectedNetworkLabel === expectedNetwork.label ? 'connected' : 'wrong_network';
+      set({
+        status: connectedStatus,
+        address: walletAddress,
+        network: detectedNetworkLabel,
+        balance,
+        isInstalled: true,
+        error: connectedStatus === 'wrong_network' ? `Switch Freighter to ${expectedNetwork.label}` : balanceError,
+      });
+      writeWalletSession({
+        address: walletAddress,
+        network: detectedNetworkLabel,
+        connectedAt: new Date().toISOString(),
+      });
+      return walletAddress;
+    } catch (e) {
+      const message = normalizeWalletError(e);
+      set({ status: message.toLowerCase().includes('network') ? 'wrong_network' : 'error', error: message });
+      return null;
     }
   },
 
@@ -186,8 +230,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
 
     restorePromise = (async () => {
       const session = readWalletSession();
-      if (!hasAccessToken()) {
-        clearWalletSession();
+      if (!session && !hasAccessToken()) {
         set({ status: 'disconnected', address: null, balance: '0.00000', error: null });
         return null;
       }
@@ -207,10 +250,9 @@ export const useWalletStore = create<WalletState>((set, get) => ({
           return null;
         }
 
-        const [currentAddress, freighterNetwork, me] = await Promise.all([
+        const [currentAddress, freighterNetwork] = await Promise.all([
           walletService.getAddress(),
           walletService.getNetwork(),
-          authApi.me(),
         ]);
 
         if (!currentAddress) {
@@ -225,19 +267,28 @@ export const useWalletStore = create<WalletState>((set, get) => ({
           return null;
         }
 
-        const knownWallets = me.wallets || [];
-        const isKnownWallet = knownWallets.some((wallet) => wallet.publicKey === currentAddress);
-        if ((session && currentAddress !== session.address) || !isKnownWallet) {
-          clearWalletSession();
-          localStorage.removeItem('lumora_access_token');
-          set({
-            status: 'disconnected',
-            address: null,
-            balance: '0.00000',
-            isInstalled: true,
-            error: 'Freighter account changed. Connect again with the active wallet.',
-          });
-          return null;
+        // If user has access token, verify merchant user session
+        if (hasAccessToken()) {
+          try {
+            const me = await authApi.me();
+            const knownWallets = me.wallets || [];
+            const isKnownWallet = knownWallets.some((wallet) => wallet.publicKey === currentAddress);
+            if ((session && currentAddress !== session.address) || !isKnownWallet) {
+              clearWalletSession();
+              localStorage.removeItem('lumora_access_token');
+              set({
+                status: 'disconnected',
+                address: null,
+                balance: '0.00000',
+                isInstalled: true,
+                error: 'Freighter account changed. Connect again with the active wallet.',
+              });
+              return null;
+            }
+          } catch {
+            // If auth token expired, clear token but maintain client wallet connection
+            localStorage.removeItem('lumora_access_token');
+          }
         }
 
         const detectedNetworkLabel = networkLabel(freighterNetwork);
@@ -278,14 +329,6 @@ export const useWalletStore = create<WalletState>((set, get) => ({
         return currentAddress;
       } catch (e) {
         const message = normalizeWalletError(e);
-        const tokenStillPresent = hasAccessToken();
-        if (!tokenStillPresent) {
-          clearWalletSession();
-        }
-        if (message.toLowerCase().includes('connect freighter') || message.toLowerCase().includes('session')) {
-          clearWalletSession();
-          localStorage.removeItem('lumora_access_token');
-        }
         set({
           status: 'disconnected',
           address: null,

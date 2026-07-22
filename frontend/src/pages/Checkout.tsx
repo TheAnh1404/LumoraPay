@@ -58,7 +58,7 @@ export const Checkout: React.FC = () => {
   const { publicToken } = useParams<{ publicToken: string }>();
   const navigate = useNavigate();
   const { getInvoiceByPublicToken } = useInvoiceStore();
-  const { status: walletStatus, address: walletAddress, balance, network, connect, error: walletError } = useWalletStore();
+  const { status: walletStatus, address: walletAddress, balance, network, connectClientWallet: connect, error: walletError } = useWalletStore();
   const { status: paymentStatus, startPayment } = usePaymentStore();
   
   const [invoice, setInvoice] = useState<any>(null);

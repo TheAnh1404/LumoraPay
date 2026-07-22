@@ -35,6 +35,36 @@
   background: #747878;
 }
 
+/* Glassmorphism & Micro-Interactions */
+.glass-panel {
+  background: rgba(251, 249, 243, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(216, 212, 202, 0.6);
+}
+
+.card-hover-effect {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.card-hover-effect:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 32px -8px rgba(8, 8, 8, 0.08);
+}
+
+.gradient-glow-yellow {
+  box-shadow: 0 0 25px -5px rgba(255, 216, 77, 0.4);
+}
+
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.8; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.03); }
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 3s infinite ease-in-out;
+}
+
 /* Print receipt rules */
 @media print {
   body {

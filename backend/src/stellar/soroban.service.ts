@@ -23,6 +23,7 @@ interface ExpectedContractCall {
   functionName: string;
   firstArgHex?: string;
   argCount?: number;
+  expectedArgs?: StellarSdk.xdr.ScVal[];
 }
 
 export interface ParsedContractCall {
@@ -293,6 +294,22 @@ export class SorobanService {
           : '';
       if (firstArgHex !== expected.firstArgHex) {
         throw new BadRequestException('Signed transaction target ID mismatch');
+      }
+    }
+    if (expected.expectedArgs) {
+      if (call.args.length !== expected.expectedArgs.length) {
+        throw new BadRequestException(
+          'Signed transaction argument count mismatch',
+        );
+      }
+      for (let i = 0; i < call.args.length; i++) {
+        const actualXdr = call.args[i].toXDR('base64');
+        const expectedXdr = expected.expectedArgs[i].toXDR('base64');
+        if (actualXdr !== expectedXdr) {
+          throw new BadRequestException(
+            `Signed transaction argument ${i + 1} mismatch`,
+          );
+        }
       }
     }
 

@@ -20,4 +20,10 @@ export const paymentsApi = {
     ),
   intentStatus: (paymentIntentId: string) =>
     apiClient.get<PaymentStatusDto>(`/payment-intents/${paymentIntentId}/status`, { auth: false }),
+  requestFaucet: (address: string) =>
+    apiClient.post<{ success: boolean; address: string; balance: string; transactionHash?: string }>(
+      '/payments/faucet',
+      { address },
+      { auth: false },
+    ),
 };

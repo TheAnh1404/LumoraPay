@@ -66,7 +66,7 @@ export class PaymentsService {
 
     if (invoice.paymentType !== 'DIRECT') {
       throw new BadRequestException(
-        'This endpoint only supports direct XLM invoices',
+        'This endpoint only supports direct payment invoices',
       );
     }
 
@@ -82,6 +82,8 @@ export class PaymentsService {
       invoice.destinationWallet,
       invoice.totalAmount.toString(),
       invoice.memo,
+      invoice.asset.code,
+      invoice.asset.issuer || undefined,
     );
 
     const payment = await this.prisma.payment.create({
@@ -134,7 +136,7 @@ export class PaymentsService {
     const payment = await this.prisma.payment.findUnique({
       where: { id: paymentIntentId },
       include: {
-        invoice: true,
+        invoice: { include: { asset: true } },
         asset: true,
         blockchainTxs: true,
       },
@@ -142,6 +144,12 @@ export class PaymentsService {
 
     if (!payment) {
       throw new NotFoundException('Payment intent not found');
+    }
+
+    if (payment.payerWallet && payment.payerWallet !== payerWallet) {
+      throw new BadRequestException(
+        'Signed payer wallet does not match the payment intent source wallet',
+      );
     }
 
     if (payment.status === 'CONFIRMED') {
@@ -155,9 +163,27 @@ export class PaymentsService {
     }
 
     const invoice = payment.invoice;
-    if (invoice.status !== 'OPEN') {
-      throw new BadRequestException('Invoice is not open for payment');
+
+    // Atomic status lock: transition invoice to PAYMENT_PENDING inside DB transaction
+    const lockResult = await this.prisma.invoice.updateMany({
+      where: {
+        id: invoice.id,
+        status: 'OPEN',
+      },
+      data: {
+        status: 'PAYMENT_PENDING',
+      },
+    });
+
+    if (lockResult.count === 0 && invoice.status !== 'PAYMENT_PENDING') {
+      throw new BadRequestException(
+        'Invoice is not open for payment or is currently being processed by another transaction',
+      );
     }
+
+    const assetCode = invoice.asset?.code || payment.asset?.code || 'XLM';
+    const assetIssuer =
+      invoice.asset?.issuer || payment.asset?.issuer || undefined;
 
     this.stellarService.verifyPaymentXdr(
       signedXdr,
@@ -165,6 +191,8 @@ export class PaymentsService {
       invoice.destinationWallet,
       invoice.totalAmount.toString(),
       invoice.memo,
+      assetCode,
+      assetIssuer,
     );
 
     const blockchainTx = payment.blockchainTxs[0];
@@ -177,10 +205,14 @@ export class PaymentsService {
           sourceAccount: payerWallet,
         },
       }),
-      this.prisma.blockchainTransaction.update({
-        where: { id: blockchainTx.id },
-        data: { status: 'SUBMITTED', submittedAt: new Date() },
-      }),
+      ...(blockchainTx
+        ? [
+            this.prisma.blockchainTransaction.update({
+              where: { id: blockchainTx.id },
+              data: { status: 'SUBMITTED', submittedAt: new Date() },
+            }),
+          ]
+        : []),
     ]);
 
     let txResult: {
@@ -203,9 +235,17 @@ export class PaymentsService {
           where: { id: payment.id },
           data: { status: 'FAILED', failureReason: message },
         }),
-        this.prisma.blockchainTransaction.update({
-          where: { id: blockchainTx.id },
-          data: { status: 'FAILED', errorMessage: message },
+        ...(blockchainTx
+          ? [
+              this.prisma.blockchainTransaction.update({
+                where: { id: blockchainTx.id },
+                data: { status: 'FAILED', errorMessage: message },
+              }),
+            ]
+          : []),
+        this.prisma.invoice.updateMany({
+          where: { id: invoice.id, status: 'PAYMENT_PENDING' },
+          data: { status: 'OPEN' },
         }),
       ]);
       throw new BadRequestException(message);
@@ -217,6 +257,8 @@ export class PaymentsService {
       invoice.destinationWallet,
       invoice.totalAmount.toString(),
       invoice.memo,
+      assetCode,
+      assetIssuer,
     );
 
     if (!isValid) {
@@ -229,14 +271,22 @@ export class PaymentsService {
             failureReason: 'Horizon verification mismatch',
           },
         }),
-        this.prisma.blockchainTransaction.update({
-          where: { id: blockchainTx.id },
-          data: {
-            status: 'FAILED',
-            transactionHash: txResult.hash,
-            ledger: BigInt(txResult.ledger),
-            errorMessage: 'Horizon verification mismatch',
-          },
+        ...(blockchainTx
+          ? [
+              this.prisma.blockchainTransaction.update({
+                where: { id: blockchainTx.id },
+                data: {
+                  status: 'FAILED',
+                  transactionHash: txResult.hash,
+                  ledger: BigInt(txResult.ledger),
+                  errorMessage: 'Horizon verification mismatch',
+                },
+              }),
+            ]
+          : []),
+        this.prisma.invoice.updateMany({
+          where: { id: invoice.id, status: 'PAYMENT_PENDING' },
+          data: { status: 'OPEN' },
         }),
       ]);
       throw new BadRequestException(

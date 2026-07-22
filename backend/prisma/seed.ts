@@ -5,7 +5,7 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('Seeding database...');
 
-  // 1. Seed Supported Asset XLM
+  // 1. Seed Supported Asset XLM & USDC
   const xlmAsset = await prisma.supportedAsset.upsert({
     where: { id: '00000000-0000-0000-0000-000000000001' }, // custom ID to prevent duplicate seeds
     update: {},
@@ -20,6 +20,22 @@ async function main() {
     },
   });
   console.log('Seeded Supported Asset XLM:', xlmAsset.code);
+
+  const usdcAsset = await prisma.supportedAsset.upsert({
+    where: { id: '00000000-0000-0000-0000-000000000002' },
+    update: {},
+    create: {
+      id: '00000000-0000-0000-0000-000000000002',
+      code: 'USDC',
+      name: 'USD Coin (Testnet)',
+      assetType: 'STELLAR_ASSET',
+      issuer: 'GBBD47IF6LWK2P7MDEVSCWR7DP6WRO3W6MJ6CHG55VUOOFFXMWAENGOM',
+      network: 'TESTNET',
+      decimals: 7,
+      isActive: true,
+    },
+  });
+  console.log('Seeded Supported Asset USDC:', usdcAsset.code);
 
   // 2. Seed Default User
   const ownerUser = await prisma.user.upsert({

@@ -442,12 +442,14 @@ export class EscrowsService {
       throw new BadRequestException('Escrow payer wallet mismatch');
     }
 
+    const expectedArgs = this.escrowArgs(escrow, escrow.invoice);
     this.sorobanService.verifyContractCall(signedXdr, {
       source: payerWallet,
       contractId: escrow.contractId,
       functionName: 'create_escrow',
       firstArgHex: escrow.onChainEscrowId,
       argCount: 7,
+      expectedArgs,
     });
 
     const blockchainTx = await this.latestTx(escrow.id, 'CONTRACT_CREATE');

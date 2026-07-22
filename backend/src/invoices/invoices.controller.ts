@@ -82,4 +82,39 @@ export class InvoicesController {
   async duplicate(@Req() req: any, @Param('id') id: string) {
     return this.invoicesService.duplicate(req.user.id, id);
   }
+
+  @Post(':id/prepare-onchain')
+  @UseGuards(JwtAuthGuard)
+  async prepareOnChain(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: { sourceWallet?: string },
+  ) {
+    return this.invoicesService.prepareOnChainRegistry(
+      req.user.id,
+      id,
+      body?.sourceWallet,
+    );
+  }
+
+  @Post(':id/submit-onchain')
+  @UseGuards(JwtAuthGuard)
+  async submitOnChain(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: { signedXdr: string; sourceWallet: string },
+  ) {
+    return this.invoicesService.submitOnChainRegistry(
+      req.user.id,
+      id,
+      body.signedXdr,
+      body.sourceWallet,
+    );
+  }
+
+  @Get(':id/onchain-state')
+  @UseGuards(JwtAuthGuard)
+  async getOnChainState(@Req() req: any, @Param('id') id: string) {
+    return this.invoicesService.onChainRegistryState(req.user.id, id);
+  }
 }

@@ -19,6 +19,8 @@ export interface VerifiedPaymentXdr {
   sourceAccount: string;
   destination: string;
   amount: string;
+  assetCode: string;
+  assetIssuer?: string;
   memo: string | null;
 }
 
@@ -98,6 +100,8 @@ export class StellarService {
     to: string,
     amount: string,
     memo: string,
+    assetCode = 'XLM',
+    assetIssuer?: string,
   ): Promise<{
     unsignedXdr: string;
     networkPassphrase: string;
@@ -119,6 +123,19 @@ export class StellarService {
         'Unable to load source account from Horizon',
       );
     }
+
+    let asset: StellarSdk.Asset;
+    if (assetCode === 'XLM' || !assetCode) {
+      asset = StellarSdk.Asset.native();
+    } else {
+      if (!assetIssuer) {
+        throw new BadRequestException(
+          `Asset issuer is required for custom asset ${assetCode}`,
+        );
+      }
+      asset = new StellarSdk.Asset(assetCode, assetIssuer);
+    }
+
     const normalizedAmount = this.normalizeAmount(amount);
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
@@ -133,7 +150,7 @@ export class StellarService {
       .addOperation(
         StellarSdk.Operation.payment({
           destination: to,
-          asset: StellarSdk.Asset.native(),
+          asset,
           amount: normalizedAmount,
         }),
       )
@@ -168,9 +185,11 @@ export class StellarService {
     if (operation.type !== 'payment') {
       throw new BadRequestException('Transaction operation must be a payment');
     }
-    if (!operation.asset?.isNative?.()) {
-      throw new BadRequestException('Only native XLM payments are supported');
-    }
+
+    const opAsset = operation.asset as StellarSdk.Asset;
+    const isNative = opAsset?.isNative?.();
+    const assetCode = isNative ? 'XLM' : opAsset?.code;
+    const assetIssuer = isNative ? undefined : opAsset?.issuer;
 
     const memo =
       tx.memo?.type === 'text' ? String((tx.memo as any).value) : null;
@@ -178,6 +197,8 @@ export class StellarService {
       sourceAccount: tx.source,
       destination: operation.destination,
       amount: this.normalizeAmount(operation.amount),
+      assetCode: assetCode || 'XLM',
+      assetIssuer,
       memo,
     };
   }
@@ -188,6 +209,8 @@ export class StellarService {
     expectedTo: string,
     expectedAmount: string,
     expectedMemo: string,
+    expectedAssetCode = 'XLM',
+    expectedAssetIssuer?: string,
   ) {
     const inspected = this.inspectPaymentXdr(signedXdr);
     if (inspected.sourceAccount !== expectedFrom) {
@@ -203,6 +226,12 @@ export class StellarService {
     }
     if (inspected.memo !== expectedMemo) {
       throw new BadRequestException('Signed transaction memo mismatch');
+    }
+    if (inspected.assetCode !== expectedAssetCode) {
+      throw new BadRequestException('Signed transaction asset code mismatch');
+    }
+    if (expectedAssetIssuer && inspected.assetIssuer !== expectedAssetIssuer) {
+      throw new BadRequestException('Signed transaction asset issuer mismatch');
     }
     return inspected;
   }
@@ -232,6 +261,8 @@ export class StellarService {
     expectedTo: string,
     expectedAmount: string,
     expectedMemo: string,
+    expectedAssetCode = 'XLM',
+    expectedAssetIssuer?: string,
   ): Promise<boolean> {
     try {
       const tx = await this.server.transactions().transaction(txHash).call();
@@ -244,9 +275,17 @@ export class StellarService {
       }
 
       const ops = await this.server.operations().forTransaction(txHash).call();
-      const paymentOp = ops.records.find(
-        (op) => op.type === 'payment' && (op as any).asset_type === 'native',
-      ) as any;
+      const paymentOp = ops.records.find((op) => {
+        if (op.type !== 'payment') return false;
+        const record = op as any;
+        if (expectedAssetCode === 'XLM') {
+          return record.asset_type === 'native';
+        }
+        return (
+          record.asset_code === expectedAssetCode &&
+          (!expectedAssetIssuer || record.asset_issuer === expectedAssetIssuer)
+        );
+      }) as any;
 
       if (!paymentOp) {
         return false;

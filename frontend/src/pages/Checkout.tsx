@@ -4,6 +4,7 @@ import CheckoutLayout from '../components/layout/CheckoutLayout';
 import { useInvoiceStore } from '../stores/invoice.store';
 import { useWalletStore } from '../stores/wallet.store';
 import { usePaymentStore } from '../stores/payment.store';
+import { paymentsApi } from '../services/api/payments.api';
 import { formatAmount, formatDate } from '../utils/format';
 import { QRCodeSVG } from 'qrcode.react'; // To render clean dynamic QR codes
 import { 
@@ -13,7 +14,8 @@ import {
   Info,
   Calendar,
   Copy,
-  Check
+  Check,
+  Zap
 } from 'lucide-react';
 import { getConfiguredStellarNetwork } from '../services/stellar/freighter.service';
 
@@ -63,6 +65,25 @@ export const Checkout: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [qrMode, setQrMode] = useState<'wallet' | 'link'>('wallet');
   const [copiedQr, setCopiedQr] = useState(false);
+  const [faucetLoading, setFaucetLoading] = useState(false);
+  const [faucetMessage, setFaucetMessage] = useState<string | null>(null);
+
+  const handleFundTestnet = async () => {
+    if (!walletAddress) return;
+    setFaucetLoading(true);
+    setFaucetMessage(null);
+    try {
+      const res = await paymentsApi.requestFaucet(walletAddress);
+      if (res.success) {
+        setFaucetMessage('Wallet funded with Testnet XLM successfully!');
+        useWalletStore.getState().setBalance(res.balance);
+      }
+    } catch (e) {
+      setFaucetMessage(e instanceof Error ? e.message : 'Friendbot funding failed');
+    } finally {
+      setFaucetLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (publicToken) {
@@ -329,12 +350,28 @@ export const Checkout: React.FC = () => {
                     {walletAddress.substring(0, 6)}...{walletAddress.substring(walletAddress.length - 6)}
                   </span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center">
                   <span className="text-on-surface-variant font-bold">Wallet Balance:</span>
-                  <span className={`font-mono-amount font-bold ${hasInsufficientBalance ? 'text-error' : 'text-primary'}`}>
-                    {formatAmount(balance)} XLM
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className={`font-mono-amount font-bold ${hasInsufficientBalance ? 'text-error' : 'text-primary'}`}>
+                      {formatAmount(balance)} XLM
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleFundTestnet}
+                      disabled={faucetLoading}
+                      className="bg-primary/10 hover:bg-primary/20 text-primary px-2 py-0.5 rounded text-[11px] font-bold border border-primary/30 transition-colors inline-flex items-center gap-1 disabled:opacity-50"
+                      title="Fund wallet with Testnet XLM via Stellar Friendbot"
+                    >
+                      <Zap size={10} /> {faucetLoading ? 'Funding...' : 'Fund Testnet XLM'}
+                    </button>
+                  </div>
                 </div>
+                {faucetMessage && (
+                  <div className="text-[11px] font-bold text-success text-right">
+                    {faucetMessage}
+                  </div>
+                )}
               </>
             )}
           </div>

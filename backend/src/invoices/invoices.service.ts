@@ -4,6 +4,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { SorobanService } from '../stellar/soroban.service';
+import { StellarService } from '../stellar/stellar.service';
+import { ContractsService } from '../contracts/contracts.service';
 import * as crypto from 'crypto';
 
 interface InvoiceItemInput {
@@ -33,7 +36,12 @@ interface InvoiceInput {
 
 @Injectable()
 export class InvoicesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private sorobanService: SorobanService,
+    private stellarService: StellarService,
+    private contractsService: ContractsService,
+  ) {}
 
   private getCheckoutUrl(publicToken: string) {
     const frontendUrl = (
@@ -504,5 +512,150 @@ export class InvoicesService {
     });
 
     return this.formatInvoice(cancelled);
+  }
+
+  private getInvoiceRegistryContractId() {
+    const contractId = this.contractsService.getInvoiceRegistryContractId();
+    this.contractsService.requireContract(contractId, 'Invoice Registry');
+    this.sorobanService.validateContractId(contractId);
+    return contractId;
+  }
+
+  async prepareOnChainRegistry(userId: string, id: string, sourceWallet?: string) {
+    const membership = await this.getMembership(userId);
+    const invoice = await this.prisma.invoice.findFirst({
+      where: { id, merchantId: membership.merchantId },
+      include: { customer: true, asset: true, items: true },
+    });
+    if (!invoice) {
+      throw new NotFoundException('Invoice not found');
+    }
+
+    const contractId = this.getInvoiceRegistryContractId();
+    const source = sourceWallet || membership.merchant.defaultWallet?.publicKey;
+    if (!source) {
+      throw new BadRequestException('Source wallet address is required');
+    }
+    this.stellarService.validatePublicKey(source);
+
+    const onChainInvoiceId = this.sorobanService.bytesN32Hex(`invoice:${invoice.id}`);
+    const metadataHash = this.sorobanService.bytesN32Hex(
+      this.sorobanService.hashJson({
+        id: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        title: invoice.title,
+        amount: invoice.totalAmount.toString(),
+      }),
+    );
+
+    const assetContractId =
+      invoice.asset.contractId ||
+      (invoice.asset.code === 'XLM'
+        ? this.sorobanService.getNativeAssetContractId()
+        : null);
+    if (!assetContractId) {
+      throw new BadRequestException('Asset contract ID is not configured');
+    }
+
+    const customerScVal = invoice.customer?.walletAddress
+      ? this.sorobanService.address(invoice.customer.walletAddress)
+      : this.sorobanService.address(invoice.destinationWallet);
+
+    const prepared = await this.sorobanService.buildInvocation({
+      source,
+      contractId,
+      functionName: 'create_invoice',
+      args: [
+        this.sorobanService.bytesN32(onChainInvoiceId),
+        this.sorobanService.address(invoice.destinationWallet),
+        customerScVal,
+        this.sorobanService.address(assetContractId),
+        this.sorobanService.i128(
+          this.sorobanService.amountToStroops(invoice.totalAmount.toString()),
+        ),
+        this.sorobanService.bytesN32(metadataHash),
+        this.sorobanService.u64(invoice.dueAt || 0),
+      ],
+    });
+
+    return {
+      invoiceId: invoice.id,
+      contractId,
+      onChainInvoiceId,
+      unsignedXdr: prepared.unsignedXdr,
+      network: prepared.network,
+      networkPassphrase: prepared.networkPassphrase,
+      expiresAt: prepared.expiresAt,
+    };
+  }
+
+  async submitOnChainRegistry(
+    userId: string,
+    id: string,
+    signedXdr: string,
+    sourceWallet: string,
+  ) {
+    const membership = await this.getMembership(userId);
+    const invoice = await this.prisma.invoice.findFirst({
+      where: { id, merchantId: membership.merchantId },
+    });
+    if (!invoice) {
+      throw new NotFoundException('Invoice not found');
+    }
+    const contractId = this.getInvoiceRegistryContractId();
+    this.stellarService.validatePublicKey(sourceWallet);
+
+    const onChainInvoiceId = this.sorobanService.bytesN32Hex(`invoice:${invoice.id}`);
+    this.sorobanService.verifyContractCall(signedXdr, {
+      source: sourceWallet,
+      contractId,
+      functionName: 'create_invoice',
+      firstArgHex: onChainInvoiceId,
+    });
+
+    const result = await this.sorobanService.submitAndPoll(signedXdr);
+    await this.prisma.invoice.update({
+      where: { id: invoice.id },
+      data: { onChainInvoiceId },
+    });
+
+    return {
+      invoiceId: invoice.id,
+      onChainInvoiceId,
+      transactionHash: result.hash,
+      explorerUrl: this.stellarService.getTransactionExplorerUrl(result.hash),
+    };
+  }
+
+  async onChainRegistryState(userId: string, id: string) {
+    const membership = await this.getMembership(userId);
+    const invoice = await this.prisma.invoice.findFirst({
+      where: { id, merchantId: membership.merchantId },
+    });
+    if (!invoice) {
+      throw new NotFoundException('Invoice not found');
+    }
+    const contractId = this.getInvoiceRegistryContractId();
+    const source = membership.merchant.defaultWallet?.publicKey;
+
+    const onChainInvoiceId =
+      invoice.onChainInvoiceId ||
+      this.sorobanService.bytesN32Hex(`invoice:${invoice.id}`);
+
+    const state = await this.sorobanService.simulateInvocation({
+      source,
+      contractId,
+      functionName: 'get_invoice',
+      args: [this.sorobanService.bytesN32(onChainInvoiceId)],
+    });
+
+    return {
+      db: this.formatInvoice(invoice),
+      contract: {
+        contractId,
+        onChainInvoiceId,
+        record: state,
+      },
+    };
   }
 }

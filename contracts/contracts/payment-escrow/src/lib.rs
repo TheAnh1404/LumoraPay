@@ -55,6 +55,8 @@ impl PaymentEscrow {
             return Err(ContractError::InvalidAmount);
         }
 
+        payer.require_auth();
+
         let key = DataKey::Escrow(escrow_id.clone());
         if env.storage().persistent().has(&key) {
             return Err(ContractError::EscrowAlreadyExists);
